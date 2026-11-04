@@ -4,6 +4,9 @@ All notable changes to the "Arc Database Manager" extension will be documented i
 
 ## [Unreleased]
 
+### Added
+- Database lifecycle from the Explorer: first-class database and scoped measurement listing APIs, create, and confirmed delete (admin token; server deletion must be enabled).
+
 ### Fixed
 - **A refused database listing no longer looks like an empty server.** Arc restricts a token's reads per database, and refuses to list every database for a scoped token rather than returning a partial list — the same bar `SHOW DATABASES` applies. `getDatabases()` answered *any* request failure by returning `['default']`, so a refusal put a database in the explorer that the token might not be able to read, with nothing anywhere saying the token had been refused. Refusals now surface: the explorer shows the connection's own database when one is set, and otherwise one node saying the token is scoped and that a database has to be set. The lenient `['default']` fallback stays for an unreachable server, which is a different problem.
 - **Arc's 401 and 403 are no longer one message.** 403 alone is Arc's answer to four different things — a token with no read permission, a token whose grants do not cover the database asked for, a licence-gated feature, and Arc's own permission store being unreadable — distinguishable only by message. Each now produces a sentence naming the fix, so a scoped token is never reported as a bad token and a server fault is never reported as a permissions problem.

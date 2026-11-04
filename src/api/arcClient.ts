@@ -11,6 +11,7 @@ import {
   MeasurementInfo
 } from '../types';
 import { filterValidNames } from '../utils/sqlUtils.js';
+import { validateDatabaseName } from '../utils/databaseNames';
 import {
   ArcAccessError,
   arcErrorMessage,
@@ -207,63 +208,58 @@ export class ArcClient {
   }
 
   /**
-   * List all measurements (tables) in a database
+   * List measurements through Arc's database-scoped endpoint. This avoids
+   * guessing column positions in SHOW TABLES responses and lets Arc apply
+   * per-database RBAC before returning names.
    */
   async getMeasurements(database?: string): Promise<MeasurementInfo[]> {
     try {
-      // SHOW TABLES ignores x-arc-database header -- must use FROM clause.
-      // Arc's regex only accepts unquoted identifiers ([\w-]+), and database
-      // names come from SHOW DATABASES (server-controlled), so no injection risk.
-      const sql = database ? `SHOW TABLES FROM ${database};` : 'SHOW TABLES;';
-      const response = await this.client.post('/api/v1/query', { sql });
-      const responseData = response.data;
-
-      const columns: string[] = responseData.columns || [];
-      const rows = responseData.data || responseData.rows || [];
-      if (Array.isArray(rows) && rows.length > 0) {
-        // Find the table name column by header; fall back to positional heuristic
-        const nameIdx = columns.findIndex(c =>
-          c.toLowerCase() === 'table_name' || c.toLowerCase() === 'name'
-        );
-        if (nameIdx >= 0) {
-          return filterValidNames(rows.map((row: any[]) => row[nameIdx])).map(name => ({ name }));
-        }
-        // Fallback: if multiple columns, table name is typically index 1; if single column, index 0
-        const idx = rows[0].length > 1 ? 1 : 0;
-        return filterValidNames(rows.map((row: any[]) => row[idx])).map(name => ({ name }));
+      const endpoint = database
+        ? `/api/v1/databases/${encodeURIComponent(database)}/measurements`
+        : '/api/v1/measurements';
+      const response = await this.client.get(endpoint);
+      const data = response.data;
+      const measurements = Array.isArray(data) ? data : data?.measurements;
+      if (!Array.isArray(measurements)) {
+        throw new Error('Unexpected measurement listing response from Arc');
       }
-
-      return [];
+      return filterValidNames(measurements.map((item: any) =>
+        typeof item === 'string' ? item : item?.name
+      )).map(name => ({ name }));
     } catch (error) {
-      // A refusal is Arc's decision, not a reason to try another route to the
-      // same data: `/api/v1/measurements` applies the same per-database check
-      // and answers identically, so the fallback would only double the
-      // requests and the audit entries. Surface it.
       const refusal = this.asAccessError(error);
-      if (refusal) {
-        throw refusal;
-      }
-
-      // Fallback to /measurements endpoint if the query failed for any other
-      // reason (an older server, a transport error).
-      try {
-        const params = database ? { database } : {};
-        const response = await this.client.get('/api/v1/measurements', { params });
-        const data = response.data;
-
-        if (Array.isArray(data)) {
-          return data;
-        } else if (data.measurements && Array.isArray(data.measurements)) {
-          return data.measurements.map((name: string) => ({ name }));
+      if (refusal) throw refusal;
+      if (database && axios.isAxiosError(error) && error.response?.status === 404) {
+        const detail = serverErrorMessage(error.response.data);
+        // Older Arc versions may not expose the database-scoped route yet.
+        // Keep the previous measurements endpoint as a 404-only fallback;
+        // never use it to retry an RBAC refusal from the scoped route.
+        if (!detail || !/database.*not found/i.test(detail)) {
+          try {
+            const fallback = await this.client.get('/api/v1/measurements', { params: { database } });
+            const fallbackData = fallback.data;
+            const names = Array.isArray(fallbackData) ? fallbackData : fallbackData?.measurements;
+            if (Array.isArray(names)) {
+              return filterValidNames(names.map((item: any) =>
+                typeof item === 'string' ? item : item?.name
+              )).map(name => ({ name }));
+            }
+          } catch (fallbackError) {
+            const fallbackRefusal = this.asAccessError(fallbackError);
+            if (fallbackRefusal) throw fallbackRefusal;
+            const fallbackDetail = axios.isAxiosError(fallbackError)
+              ? serverErrorMessage(fallbackError.response?.data)
+              : undefined;
+            if (fallbackDetail) throw new Error(fallbackDetail);
+            throw this.handleError(fallbackError);
+          }
         }
-      } catch (endpointError) {
-        const fallbackRefusal = this.asAccessError(endpointError);
-        if (fallbackRefusal) {
-          throw fallbackRefusal;
-        }
-        console.warn('Both SHOW TABLES and /measurements failed:', endpointError);
+        if (detail) throw new Error(detail);
       }
-
+      if (axios.isAxiosError(error)) {
+        const detail = serverErrorMessage(error.response?.data);
+        if (detail) throw new Error(detail);
+      }
       throw this.handleError(error);
     }
   }
@@ -294,44 +290,98 @@ export class ArcClient {
   }
 
   /**
-   * List all databases using SHOW DATABASES SQL query
+   * List databases using Arc's first-class database API.
    */
   async getDatabases(): Promise<string[]> {
     try {
-      // Arc supports SHOW DATABASES SQL query
-      const response = await this.client.post('/api/v1/query', {
-        sql: 'SHOW DATABASES;'  // Arc API expects 'sql' not 'query'
-      });
-
-      const responseData = response.data;
-
-      // Response format: { columns: ['database'], data: [['default'], ['production'], ...] }
-      const rows = responseData.data || responseData.rows || [];
-      if (Array.isArray(rows)) {
-        return filterValidNames(rows.map((row: any[]) => row[0]));
+      const response = await this.client.get('/api/v1/databases');
+      const databases = response.data?.databases;
+      if (!Array.isArray(databases)) {
+        throw new Error('Unexpected database listing response from Arc');
       }
-
-      return ['default'];
+      return filterValidNames(databases.map((database: any) => database?.name));
     } catch (error) {
       // A refusal is not a connectivity problem and must not be answered with
-      // a made-up database. Arc restricts reads per database, so a scoped
-      // token is refused here rather than given a filtered list — and the old
-      // blanket `return ['default']` turned that into a tree entry for a
-      // database the token may not be able to read at all, with nothing
-      // anywhere saying the token was scoped. Let the caller see the refusal
-      // and degrade knowingly.
+      // a made-up database. Arc restricts list-all through the same RBAC gate
+      // as SHOW DATABASES, so preserve the classifier introduced in #19.
       const refusal = this.asAccessError(error);
-      if (refusal) {
-        throw refusal;
+      if (refusal) throw refusal;
+      // Older Arc versions may not expose the database resource route yet.
+      // Fall back to SHOW DATABASES only for a missing route; a 401/403 from
+      // either endpoint is surfaced rather than turned into a fake database.
+      if (axios.isAxiosError(error) && error.response?.status === 404) {
+        try {
+          const legacy = await this.client.post('/api/v1/query', { sql: 'SHOW DATABASES;' });
+          const rows = legacy.data?.data || legacy.data?.rows || [];
+          if (Array.isArray(rows)) {
+            return filterValidNames(rows.map((row: any[]) => row[0]));
+          }
+        } catch (fallbackError) {
+          const fallbackRefusal = this.asAccessError(fallbackError);
+          if (fallbackRefusal) throw fallbackRefusal;
+          console.warn('Legacy SHOW DATABASES fallback failed:', fallbackError);
+        }
       }
-      // Anything else (an unreachable server, a malformed response) keeps the
-      // old lenient behaviour: one database so the UI still has a root.
+      // Keep the existing lenient root for transport/server failures so users
+      // can still retry from the Explorer on older or unavailable servers.
       if (axios.isAxiosError(error)) {
-        console.warn('Failed to get databases, using default:', error.message);
+        console.warn('Failed to fetch databases, using default:', error.message);
         return ['default'];
       }
       throw this.handleError(error);
     }
+  }
+
+  /** Create a database through Arc's admin-protected database API. */
+  async createDatabase(name: string): Promise<void> {
+    const validation = validateDatabaseName(name);
+    if (validation) throw new Error(validation);
+    try {
+      await this.client.post('/api/v1/databases', { name });
+    } catch (error) {
+      throw this.handleDatabaseMutationError(error, 'create');
+    }
+  }
+
+  /**
+   * Delete a database after the UI has confirmed the destructive action.
+   * Arc requires both an admin token and the explicit `confirm=true` query.
+   */
+  async deleteDatabase(name: string): Promise<void> {
+    const validation = validateDatabaseName(name);
+    if (validation) throw new Error(validation);
+    try {
+      await this.client.delete(`/api/v1/databases/${encodeURIComponent(name)}`, {
+        params: { confirm: 'true' }
+      });
+    } catch (error) {
+      throw this.handleDatabaseMutationError(error, 'delete');
+    }
+  }
+
+  private handleDatabaseMutationError(error: unknown, operation: 'create' | 'delete'): Error {
+    if (axios.isAxiosError(error)) {
+      const status = error.response?.status;
+      const detail = serverErrorMessage(error.response?.data);
+      if (status === 403) {
+        // Delete can also be disabled server-side or target a reserved name;
+        // neither is an admin-token problem. A broken permission store is a
+        // server fault, not a reason to rotate the token.
+        if (detail && /delete operations are disabled|reserved database/i.test(detail)) {
+          return new Error(detail);
+        }
+        if (detail && /permission data unavailable/i.test(detail)) {
+          return new Error(`${detail} This is a server-side fault; check the Arc server log.`);
+        }
+        if (detail && /enterprise license/i.test(detail)) return new Error(detail);
+        return new Error(`${detail || `Arc refused to ${operation} the database.`} This operation requires an admin token.`);
+      }
+      if (detail) return new Error(detail);
+      if (status === 400 || status === 404 || status === 409) {
+        return new Error(`Arc could not ${operation} the database.`);
+      }
+    }
+    return this.handleError(error);
   }
 
   /**

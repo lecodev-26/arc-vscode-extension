@@ -10,6 +10,7 @@ import { ArcNotebookEditorProvider } from './views/notebookEditor';
 import { QueryStorage } from './utils/queryStorage';
 import { AlertManager } from './utils/alertManager';
 import { ArcCommands } from './commands/arcCommands';
+import { DatabaseCommands } from './commands/databaseCommands';
 import { QueryResultsView } from './views/queryResultsView';
 import { TelemetryReporter } from './utils/telemetry';
 
@@ -63,6 +64,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   // Initialize commands
   const commands = new ArcCommands(connectionManager, explorerProvider, connectionsProvider);
+  const databaseCommands = new DatabaseCommands(connectionManager, explorerProvider);
   commands.setTokensProvider(tokensProvider);
   commands.setQueriesProvider(queriesProvider, queryStorage);
   commands.setAlertsProvider(alertsProvider, alertManager);
@@ -162,6 +164,8 @@ export function activate(context: vscode.ExtensionContext) {
     vscode.commands.registerCommand('arc.newQuery', () => commands.newQuery()),
     vscode.commands.registerCommand('arc.executeQuery', () => commands.executeQuery()),
     vscode.commands.registerCommand('arc.refreshExplorer', () => commands.refreshExplorer()),
+    vscode.commands.registerCommand('arc.createDatabase', () => databaseCommands.createDatabase()),
+    vscode.commands.registerCommand('arc.deleteDatabase', (treeItem) => databaseCommands.deleteDatabase(treeItem)),
     vscode.commands.registerCommand('arc.showMeasurements', () => commands.showMeasurements()),
     vscode.commands.registerCommand('arc.insertTestData', () => commands.insertTestData()),
     vscode.commands.registerCommand('arc.showHealth', () => commands.showHealth()),

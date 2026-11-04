@@ -77,6 +77,16 @@
         "icon": "$(refresh)"
       },
       {
+        "command": "arc.createDatabase",
+        "title": "Arc: Create Database",
+        "icon": "$(database)"
+      },
+      {
+        "command": "arc.deleteDatabase",
+        "title": "Arc: Delete Database",
+        "icon": "$(trash)"
+      },
+      {
         "command": "arc.showMeasurements",
         "title": "Arc: Show Measurements",
         "icon": "$(database)"
@@ -361,6 +371,11 @@
           "group": "navigation@2"
         },
         {
+          "command": "arc.createDatabase",
+          "when": "view == arcExplorer",
+          "group": "navigation@3"
+        },
+        {
           "command": "arc.saveCurrentQuery",
           "when": "view == arcQueries",
           "group": "navigation@1"
@@ -496,6 +511,11 @@
           "command": "arc.deleteAlert",
           "when": "view == arcAlerts && viewItem == alert",
           "group": "danger@1"
+        },
+        {
+          "command": "arc.deleteDatabase",
+          "when": "view == arcExplorer && viewItem == database",
+          "group": "danger@2"
         }
       ],
       "editor/title": [

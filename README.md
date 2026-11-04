@@ -16,6 +16,7 @@
 - **Query management** - automatic history and saved queries, with execution time, row counts and errors.
 - **Tokens** - create, rotate, verify and delete Arc server tokens from the sidebar. Creating one asks which permissions it should carry (Arc's default is read and write); `read` is what the extension needs to browse databases and run queries.
 - **Themes** - adapts to Light, Dark and High Contrast automatically, charts included.
+- **Database management** - list databases and their measurements through Arc's scoped database API, create databases from the Explorer, and delete them from a database's context menu after an explicit confirmation. Create/delete require an admin token; deletion must also be enabled by the Arc server.
 
 See **[FEATURES.md](FEATURES.md)** for the full guide.
 
@@ -94,6 +95,8 @@ Turn it off with `arc.telemetry.enabled`, or disable telemetry across VS Code wi
 ## Troubleshooting
 
 **Cannot connect** - check Arc is up (`curl http://localhost:8000/health`), confirm host and port, then run **Arc: Verify Token**.
+
+**Cannot create or delete a database** - both operations require an admin token. Database deletion is also disabled unless the Arc server has `delete.enabled=true`; the extension shows Arc's response when the server refuses an operation.
 
 **"Token is scoped - set a database on this connection"** - the token can read, but Arc will not list every database for it. Edit the connection and set its database to one the token is granted. This is not a failure; it is what a database-scoped token looks like.
 
