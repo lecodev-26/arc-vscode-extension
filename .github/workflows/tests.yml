@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'feat/**'
+  pull_request:
+    branches:
+      - main
+      - fix/databases-listing-403-handling
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    name: Compile, lint and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Install dependencies
+        run: npm ci
+      - name: Run compile, lint and unit tests
+        run: npm test
