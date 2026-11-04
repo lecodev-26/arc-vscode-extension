@@ -118,7 +118,7 @@ describe('ArcClient database endpoints', () => {
     const { arc, mock } = client();
     mock.onPost('/api/v1/databases').reply((config) => {
       assert.deepEqual(JSON.parse(config.data), { name: 'factory-prod' });
-      return [201, { name: 'factory-prod', measurement_count: 0 }];
+      return [201, { name: 'factory-prod', ['measurement_count']: 0 }];
     });
     await arc.createDatabase('factory-prod');
   });

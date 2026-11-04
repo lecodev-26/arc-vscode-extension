@@ -47,7 +47,6 @@ const LICENSE = { success: false, error: "RBAC requires an enterprise license wi
 const NOT_FOUND = { error: "Database 'ghost' not found" };
 
 const SHOW_DATABASES_OK = { success: true, columns: ['database'], data: [['metrics'], ['logs']] };
-const SHOW_TABLES_OK = { success: true, columns: ['database', 'table_name'], data: [['metrics', 'cpu']] };
 
 // --- Harness ----------------------------------------------------------------
 
@@ -198,7 +197,11 @@ describe('ArcClient.getDatabases', () => {
 describe('ArcClient.getMeasurements', () => {
   it('returns the measurements on success', async () => {
     const { arc, mock } = client();
-    mock.onPost('/api/v1/query').reply(200, SHOW_TABLES_OK);
+    mock.onGet('/api/v1/databases/metrics/measurements').reply(200, {
+      database: 'metrics',
+      measurements: [{ name: 'cpu' }],
+      count: 1
+    });
     assert.deepEqual(await arc.getMeasurements('metrics'), [{ name: 'cpu' }]);
   });
 
@@ -207,7 +210,7 @@ describe('ArcClient.getMeasurements', () => {
     // identically, so the fallback would only double the requests and the
     // audit entries for a decision Arc has already made.
     const { arc, mock } = client();
-    mock.onPost('/api/v1/query').reply(403, SCOPED_DB);
+    mock.onGet('/api/v1/databases/metrics/measurements').reply(403, SCOPED_DB);
     const fallback = mock.onGet('/api/v1/measurements').reply(403, SCOPED_MEASUREMENT);
 
     await assert.rejects(
@@ -224,17 +227,17 @@ describe('ArcClient.getMeasurements', () => {
     assert.equal(triedFallback, false, '/api/v1/measurements must not be tried after a refusal');
   });
 
-  it('still falls back to /api/v1/measurements when the query itself fails', async () => {
+  it('falls back to /api/v1/measurements when the scoped route is unavailable', async () => {
     const { arc, mock } = client();
-    mock.onPost('/api/v1/query').reply(500, { error: 'boom' });
+    mock.onGet('/api/v1/databases/metrics/measurements').reply(404, { error: 'Not Found' });
     mock.onGet('/api/v1/measurements').reply(200, { measurements: ['cpu', 'mem'] });
 
     assert.deepEqual(await arc.getMeasurements('metrics'), [{ name: 'cpu' }, { name: 'mem' }]);
   });
 
-  it('surfaces a refusal raised only by the fallback', async () => {
+  it('surfaces a refusal raised only by the compatibility fallback', async () => {
     const { arc, mock } = client();
-    mock.onPost('/api/v1/query').reply(500, { error: 'boom' });
+    mock.onGet('/api/v1/databases/metrics/measurements').reply(404, { error: 'Not Found' });
     mock.onGet('/api/v1/measurements').reply(403, SCOPED_MEASUREMENT);
 
     await assert.rejects(

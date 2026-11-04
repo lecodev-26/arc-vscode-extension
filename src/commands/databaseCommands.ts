@@ -23,7 +23,9 @@ export class DatabaseCommands {
       placeHolder: 'metrics',
       validateInput: validateDatabaseName
     });
-    if (name === undefined) return;
+    if (name === undefined) {
+      return;
+    }
 
     try {
       await vscode.window.withProgress(
@@ -69,7 +71,9 @@ export class DatabaseCommands {
       },
       'Delete Database'
     );
-    if (confirmation !== 'Delete Database') return;
+    if (confirmation !== 'Delete Database') {
+      return;
+    }
 
     try {
       await vscode.window.withProgress(

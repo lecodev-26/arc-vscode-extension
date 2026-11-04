@@ -228,7 +228,9 @@ export class ArcClient {
       )).map(name => ({ name }));
     } catch (error) {
       const refusal = this.asAccessError(error);
-      if (refusal) throw refusal;
+      if (refusal) {
+        throw refusal;
+      }
       if (database && axios.isAxiosError(error) && error.response?.status === 404) {
         const detail = serverErrorMessage(error.response.data);
         // Older Arc versions may not expose the database-scoped route yet.
@@ -246,19 +248,27 @@ export class ArcClient {
             }
           } catch (fallbackError) {
             const fallbackRefusal = this.asAccessError(fallbackError);
-            if (fallbackRefusal) throw fallbackRefusal;
+            if (fallbackRefusal) {
+              throw fallbackRefusal;
+            }
             const fallbackDetail = axios.isAxiosError(fallbackError)
               ? serverErrorMessage(fallbackError.response?.data)
               : undefined;
-            if (fallbackDetail) throw new Error(fallbackDetail);
+            if (fallbackDetail) {
+              throw new Error(fallbackDetail);
+            }
             throw this.handleError(fallbackError);
           }
         }
-        if (detail) throw new Error(detail);
+        if (detail) {
+          throw new Error(detail);
+        }
       }
       if (axios.isAxiosError(error)) {
         const detail = serverErrorMessage(error.response?.data);
-        if (detail) throw new Error(detail);
+        if (detail) {
+          throw new Error(detail);
+        }
       }
       throw this.handleError(error);
     }
@@ -305,7 +315,9 @@ export class ArcClient {
       // a made-up database. Arc restricts list-all through the same RBAC gate
       // as SHOW DATABASES, so preserve the classifier introduced in #19.
       const refusal = this.asAccessError(error);
-      if (refusal) throw refusal;
+      if (refusal) {
+        throw refusal;
+      }
       // Older Arc versions may not expose the database resource route yet.
       // Fall back to SHOW DATABASES only for a missing route; a 401/403 from
       // either endpoint is surfaced rather than turned into a fake database.
@@ -318,7 +330,9 @@ export class ArcClient {
           }
         } catch (fallbackError) {
           const fallbackRefusal = this.asAccessError(fallbackError);
-          if (fallbackRefusal) throw fallbackRefusal;
+          if (fallbackRefusal) {
+            throw fallbackRefusal;
+          }
           console.warn('Legacy SHOW DATABASES fallback failed:', fallbackError);
         }
       }
@@ -335,7 +349,9 @@ export class ArcClient {
   /** Create a database through Arc's admin-protected database API. */
   async createDatabase(name: string): Promise<void> {
     const validation = validateDatabaseName(name);
-    if (validation) throw new Error(validation);
+    if (validation) {
+      throw new Error(validation);
+    }
     try {
       await this.client.post('/api/v1/databases', { name });
     } catch (error) {
@@ -349,7 +365,9 @@ export class ArcClient {
    */
   async deleteDatabase(name: string): Promise<void> {
     const validation = validateDatabaseName(name);
-    if (validation) throw new Error(validation);
+    if (validation) {
+      throw new Error(validation);
+    }
     try {
       await this.client.delete(`/api/v1/databases/${encodeURIComponent(name)}`, {
         params: { confirm: 'true' }
@@ -373,10 +391,14 @@ export class ArcClient {
         if (detail && /permission data unavailable/i.test(detail)) {
           return new Error(`${detail} This is a server-side fault; check the Arc server log.`);
         }
-        if (detail && /enterprise license/i.test(detail)) return new Error(detail);
+        if (detail && /enterprise license/i.test(detail)) {
+          return new Error(detail);
+        }
         return new Error(`${detail || `Arc refused to ${operation} the database.`} This operation requires an admin token.`);
       }
-      if (detail) return new Error(detail);
+      if (detail) {
+        return new Error(detail);
+      }
       if (status === 400 || status === 404 || status === 409) {
         return new Error(`Arc could not ${operation} the database.`);
       }
